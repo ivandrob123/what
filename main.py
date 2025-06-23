@@ -6,17 +6,16 @@ from tkinter import filedialog, messagebox, ttk
 import cv2
 import numpy as np
 import torch
-import torchvision.transforms as transforms
 from PIL import Image, ImageTk
 
 
 class ImageProcessorApp:
-    """Графическое приложение для обработки изображений с использованием PyTorch."""
+    """Графическое приложение для обработки изображений."""
 
     def __init__(self, root):
         """Инициализация приложения."""
         self.root = root
-        self.root.title(f"Работа с изображениями (PyTorch)")
+        self.root.title(f"Работа с изображениями")
         self.root.geometry("1000x700")
 
         # Инициализация переменных
@@ -25,10 +24,6 @@ class ImageProcessorApp:
         self.tk_image = None
         self.webcam = None
         self.webcam_active = False
-
-        # Преобразования для PyTorch
-        self.to_tensor = transforms.ToTensor()
-        self.to_pil = transforms.ToPILImage()
 
         # Создание интерфейса
         self.create_widgets()
@@ -105,6 +100,7 @@ class ImageProcessorApp:
         # Рисование круга
         ttk.Label(self.control_frame, text="Координаты круга:").pack(pady=(5, 0))
         
+        # Фрейм для координат X и Y
         coords_frame = ttk.Frame(self.control_frame)
         coords_frame.pack(fill=tk.X, pady=2)
         
@@ -157,14 +153,12 @@ class ImageProcessorApp:
             # Используем numpy для чтения файла с кириллическими путями
             with open(file_path, 'rb') as f:
                 file_bytes = np.frombuffer(f.read(), np.uint8)
-                img_np = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+                self.original_image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             
-            if img_np is None:
+            if self.original_image is None:
                 raise ValueError("OpenCV не смог загрузить изображение")
 
-            # Конвертируем в тензор PyTorch и сохраняем оригинал
-            self.original_image = self.to_tensor(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
-            self.image = self.original_image.clone()
+            self.image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
             self.show_image()
 
         except Exception as e:
@@ -211,9 +205,8 @@ class ImageProcessorApp:
 
         ret, frame = self.webcam.read()
         if ret:
-            # Конвертируем в тензор PyTorch
-            self.original_image = self.to_tensor(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            self.image = self.original_image.clone()
+            self.original_image = frame.copy()
+            self.image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             self.show_image()
 
         if self.webcam_active:
@@ -227,15 +220,12 @@ class ImageProcessorApp:
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
 
-        # Конвертируем тензор обратно в PIL Image
-        img_pil = self.to_pil(self.image)
-        
-        # Масштабирование изображения
-        width, height = img_pil.size
+        height, width = self.image.shape[:2]
         ratio = min(canvas_width / width, canvas_height / height)
         new_width, new_height = int(width * ratio), int(height * ratio)
-        img_pil = img_pil.resize((new_width, new_height), Image.LANCZOS)
 
+        resized_image = cv2.resize(self.image, (new_width, new_height))
+        img_pil = Image.fromarray(resized_image)
         self.tk_image = ImageTk.PhotoImage(img_pil)
 
         self.canvas.delete("all")
@@ -247,51 +237,39 @@ class ImageProcessorApp:
         )
 
     def update_channels(self):
-        """Обновление отображаемых цветовых каналов с использованием PyTorch."""
+        """Обновление отображаемых цветовых каналов."""
         if self.original_image is None:
             return
 
         channel = self.channel_var.get()
+        image_rgb = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
 
         if channel == "RGB":
-            self.image = self.original_image.clone()
+            self.image = image_rgb
         else:
-            # Создаем нулевой тензор той же формы
-            zeros = torch.zeros_like(self.original_image)
-            
+            red, green, blue = cv2.split(image_rgb)
+            zeros = np.zeros_like(red)
+
             if channel == "R":
-                self.image = torch.stack([
-                    self.original_image[0],  # Красный канал
-                    zeros[1],               # Нули для зеленого
-                    zeros[2]                # Нули для синего
-                ])
+                self.image = cv2.merge([red, zeros, zeros])
             elif channel == "G":
-                self.image = torch.stack([
-                    zeros[0],               # Нули для красного
-                    self.original_image[1], # Зеленый канал
-                    zeros[2]                # Нули для синего
-                ])
+                self.image = cv2.merge([zeros, green, zeros])
             elif channel == "B":
-                self.image = torch.stack([
-                    zeros[0],               # Нули для красного
-                    zeros[1],               # Нули для зеленого
-                    self.original_image[2]  # Синий канал
-                ])
+                self.image = cv2.merge([zeros, zeros, blue])
 
         self.show_image()
 
     def apply_negative(self):
-        """Применение негатива к изображению с использованием PyTorch."""
+        """Применение негатива к изображению."""
         if self.original_image is None:
             messagebox.showwarning("Предупреждение", "Сначала загрузите изображение")
             return
 
-        # Негатив = 1 - изображение (так как значения нормализованы в [0,1])
-        self.image = 1.0 - self.original_image
+        self.image = 255 - cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
         self.show_image()
 
     def rotate_image(self):
-        """Поворот изображения на заданный угол с использованием PyTorch."""
+        """Поворот изображения на заданный угол."""
         if self.original_image is None:
             messagebox.showwarning("Предупреждение", "Сначала загрузите изображение")
             return
@@ -302,12 +280,16 @@ class ImageProcessorApp:
             messagebox.showerror("Ошибка", "Введите корректное число для угла")
             return
 
-        # Конвертируем тензор в PIL Image для вращения
-        img_pil = self.to_pil(self.original_image)
-        rotated_pil = img_pil.rotate(angle, expand=True)
-        
-        # Конвертируем обратно в тензор
-        self.image = self.to_tensor(rotated_pil)
+        height, width = self.original_image.shape[:2]
+        center = (width // 2, height // 2)
+        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated = cv2.warpAffine(
+            cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB),
+            rotation_matrix,
+            (width, height)
+        )
+
+        self.image = rotated
         self.show_image()
 
     def draw_circle(self):
@@ -321,25 +303,19 @@ class ImageProcessorApp:
             y_coord = int(self.circle_y_entry.get())
             radius = int(self.circle_radius_entry.get())
 
-            # Конвертируем тензор в numpy array для рисования
-            img_np = self.original_image.permute(1, 2, 0).numpy() * 255
-            img_np = img_np.astype(np.uint8)
-            
-            # Рисуем круг
-            cv2.circle(img_np, (x_coord, y_coord), radius, (255, 0, 0), 2)
-            
-            # Конвертируем обратно в тензор
-            self.image = self.to_tensor(img_np)
+            self.image = cv2.cvtColor(self.original_image.copy(), cv2.COLOR_BGR2RGB)
+            cv2.circle(self.image, (x_coord, y_coord), radius, (255, 0, 0), 2)
+
             self.show_image()
         except ValueError as e:
-            messagebox.showerror("Ошибка", "Некорректный ввод: введите целые числа для координат и радиуса")
+            messagebox.showerror("Ошибка", f"Некорректный ввод: введите целые числа для координат и радиуса")
         except Exception as e:
             messagebox.showerror("Ошибка", f"Произошла ошибка: {str(e)}")
 
     def reset_image(self):
         """Сброс изображения к оригиналу."""
         if self.original_image is not None:
-            self.image = self.original_image.clone()
+            self.image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
             self.channel_var.set("RGB")
             self.show_image()
 

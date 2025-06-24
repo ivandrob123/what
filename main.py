@@ -158,6 +158,10 @@ class ImageProcessorApp:
             if self.original_image is None:
                 raise ValueError("OpenCV не смог загрузить изображение")
 
+            # Конвертируем в PyTorch tensor и обратно для демонстрации
+            tensor_image = torch.from_numpy(self.original_image).float() / 255.0
+            self.original_image = (tensor_image.numpy() * 255).astype(np.uint8)
+            
             self.image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
             self.show_image()
 
@@ -205,8 +209,11 @@ class ImageProcessorApp:
 
         ret, frame = self.webcam.read()
         if ret:
-            self.original_image = frame.copy()
-            self.image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Конвертируем в PyTorch tensor и обратно для демонстрации
+            tensor_frame = torch.from_numpy(frame).float() / 255.0
+            self.original_image = (tensor_frame.numpy() * 255).astype(np.uint8)
+            
+            self.image = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
             self.show_image()
 
         if self.webcam_active:
@@ -237,35 +244,47 @@ class ImageProcessorApp:
         )
 
     def update_channels(self):
-        """Обновление отображаемых цветовых каналов."""
+        """Обновление отображаемых цветовых каналов с использованием PyTorch."""
         if self.original_image is None:
             return
 
         channel = self.channel_var.get()
         image_rgb = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
-
+        
+        # Конвертируем в PyTorch tensor
+        tensor_image = torch.from_numpy(image_rgb).float() / 255.0
+        
         if channel == "RGB":
             self.image = image_rgb
         else:
-            red, green, blue = cv2.split(image_rgb)
-            zeros = np.zeros_like(red)
+            # Разделяем каналы с помощью PyTorch
+            red, green, blue = tensor_image.unbind(dim=-1)
+            zeros = torch.zeros_like(red)
 
             if channel == "R":
-                self.image = cv2.merge([red, zeros, zeros])
+                result = torch.stack([red, zeros, zeros], dim=-1)
             elif channel == "G":
-                self.image = cv2.merge([zeros, green, zeros])
+                result = torch.stack([zeros, green, zeros], dim=-1)
             elif channel == "B":
-                self.image = cv2.merge([zeros, zeros, blue])
+                result = torch.stack([zeros, zeros, blue], dim=-1)
+            
+            # Конвертируем обратно в numpy array
+            self.image = (result.numpy() * 255).astype(np.uint8)
 
         self.show_image()
 
     def apply_negative(self):
-        """Применение негатива к изображению."""
+        """Применение негатива к изображению с использованием PyTorch."""
         if self.original_image is None:
             messagebox.showwarning("Предупреждение", "Сначала загрузите изображение")
             return
 
-        self.image = 255 - cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
+        # Конвертируем в PyTorch tensor
+        tensor_image = torch.from_numpy(cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)).float() / 255.0
+        # Применяем негатив
+        negative = 1.0 - tensor_image
+        # Конвертируем обратно в numpy array
+        self.image = (negative.numpy() * 255).astype(np.uint8)
         self.show_image()
 
     def rotate_image(self):

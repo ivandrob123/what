@@ -1,4 +1,4 @@
-# Image Processor App
+# Приложение для обработки изображений
 
 ![Python](https://img.shields.io/badge/Python-3.7%2B-blue)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.5%2B-orange)

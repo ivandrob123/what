@@ -86,15 +86,55 @@ class ImageProcessorApp:
             command=self.apply_negative
         ).pack(fill=tk.X, pady=2)
 
-        # Вращение
-        ttk.Label(self.control_frame, text="Угол вращения:").pack(pady=(5, 0))
-        self.rotate_entry = ttk.Entry(self.control_frame)
-        self.rotate_entry.pack(fill=tk.X, pady=2)
+        # Размытие по Гауссу
+        ttk.Label(self.control_frame, text="Размытие по Гауссу:").pack(pady=(5, 0))
+        
+        # Фрейм для параметров размытия
+        blur_frame = ttk.Frame(self.control_frame)
+        blur_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(blur_frame, text="Ядро (нечетное):").pack(side=tk.LEFT, padx=(0, 5))
+        self.blur_kernel_entry = ttk.Entry(blur_frame, width=10)
+        self.blur_kernel_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.blur_kernel_entry.insert(0, "5")
+        
+        ttk.Label(blur_frame, text="Sigma X:").pack(side=tk.LEFT, padx=(5, 5))
+        self.blur_sigma_entry = ttk.Entry(blur_frame, width=10)
+        self.blur_sigma_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.blur_sigma_entry.insert(0, "0")
 
         ttk.Button(
             self.control_frame,
-            text="Повернуть изображение",
-            command=self.rotate_image
+            text="Применить размытие",
+            command=self.apply_gaussian_blur
+        ).pack(fill=tk.X, pady=2)
+
+        # Область размытия
+        ttk.Label(self.control_frame, text="Область размытия (x,y,w,h):").pack(pady=(5, 0))
+        
+        region_frame = ttk.Frame(self.control_frame)
+        region_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(region_frame, text="X:").pack(side=tk.LEFT, padx=(0, 5))
+        self.region_x_entry = ttk.Entry(region_frame, width=5)
+        self.region_x_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(region_frame, text="Y:").pack(side=tk.LEFT, padx=(5, 5))
+        self.region_y_entry = ttk.Entry(region_frame, width=5)
+        self.region_y_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(region_frame, text="W:").pack(side=tk.LEFT, padx=(5, 5))
+        self.region_w_entry = ttk.Entry(region_frame, width=5)
+        self.region_w_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        ttk.Label(region_frame, text="H:").pack(side=tk.LEFT, padx=(5, 0))
+        self.region_h_entry = ttk.Entry(region_frame, width=5)
+        self.region_h_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        ttk.Button(
+            self.control_frame,
+            text="Размыть область",
+            command=self.apply_region_blur
         ).pack(fill=tk.X, pady=2)
 
         # Рисование круга
@@ -287,29 +327,83 @@ class ImageProcessorApp:
         self.image = (negative.numpy() * 255).astype(np.uint8)
         self.show_image()
 
-    def rotate_image(self):
-        """Поворот изображения на заданный угол."""
+    def apply_gaussian_blur(self):
+        """Применение размытия по Гауссу ко всему изображению."""
         if self.original_image is None:
             messagebox.showwarning("Предупреждение", "Сначала загрузите изображение")
             return
 
         try:
-            angle = float(self.rotate_entry.get())
-        except ValueError:
-            messagebox.showerror("Ошибка", "Введите корректное число для угла")
+            kernel_size = int(self.blur_kernel_entry.get())
+            sigma_x = float(self.blur_sigma_entry.get())
+            
+            # Ядро должно быть положительным нечетным числом
+            if kernel_size <= 0 or kernel_size % 2 == 0:
+                raise ValueError("Размер ядра должен быть положительным нечетным числом")
+                
+            # Применяем размытие
+            blurred = cv2.GaussianBlur(
+                cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB),
+                (kernel_size, kernel_size),
+                sigmaX=sigma_x
+            )
+            
+            self.image = blurred
+            self.show_image()
+            
+        except ValueError as e:
+            messagebox.showerror("Ошибка", f"Некорректные параметры размытия: {str(e)}")
+
+    def apply_region_blur(self):
+        """Применение размытия по Гауссу к указанной области изображения."""
+        if self.original_image is None:
+            messagebox.showwarning("Предупреждение", "Сначала загрузите изображение")
             return
 
-        height, width = self.original_image.shape[:2]
-        center = (width // 2, height // 2)
-        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-        rotated = cv2.warpAffine(
-            cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB),
-            rotation_matrix,
-            (width, height)
-        )
-
-        self.image = rotated
-        self.show_image()
+        try:
+            # Получаем параметры размытия
+            kernel_size = int(self.blur_kernel_entry.get())
+            sigma_x = float(self.blur_sigma_entry.get())
+            
+            # Получаем координаты области
+            x = int(self.region_x_entry.get())
+            y = int(self.region_y_entry.get())
+            w = int(self.region_w_entry.get())
+            h = int(self.region_h_entry.get())
+            
+            # Проверяем параметры
+            if kernel_size <= 0 or kernel_size % 2 == 0:
+                raise ValueError("Размер ядра должен быть положительным нечетным числом")
+                
+            if w <= 0 or h <= 0:
+                raise ValueError("Ширина и высота области должны быть положительными")
+                
+            # Получаем изображение
+            img = cv2.cvtColor(self.original_image, cv2.COLOR_BGR2RGB)
+            height, width = img.shape[:2]
+            
+            # Проверяем, что область находится в пределах изображения
+            if x < 0 or y < 0 or x + w > width or y + h > height:
+                raise ValueError("Область выходит за пределы изображения")
+            
+            # Выделяем область
+            region = img[y:y+h, x:x+w]
+            
+            # Применяем размытие к области
+            blurred_region = cv2.GaussianBlur(
+                region,
+                (kernel_size, kernel_size),
+                sigmaX=sigma_x
+            )
+            
+            # Вставляем размытую область обратно
+            img[y:y+h, x:x+w] = blurred_region
+            
+            self.image = img
+            self.show_image()
+            
+        except ValueError as e:
+            messagebox.showerror("Ошибка", f"Некорректные параметры: {str(e)}")
 
     def draw_circle(self):
         """Рисование круга на изображении."""
